@@ -4,3 +4,4 @@ numpy
 twilio
 scikit-learn
 requests
+python-telegram-bot
