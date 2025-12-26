@@ -1,23 +1,24 @@
 from flask import Flask, render_template, request
+from telegram import Bot, Update
+from telegram.ext import CommandHandler, MessageHandler, Filters, Updater
 import pandas as pd
 import numpy as np
-from twilio.twiml.messaging_response import MessagingResponse
 from sklearn.ensemble import RandomForestClassifier
 from math import exp, factorial
 
 app = Flask(__name__)
 
-# ----------------------
-# ML MODEL (pré-entraîné)
-# ----------------------
+# ============================
+# Initialisation du modèle
+# ============================
 X_train = np.array([[1.8,1.0],[2.2,0.9],[1.3,1.4],[0.8,1.9],[1.6,1.2],[2.4,0.7]])
 y_train = np.array([1,1,0,0,1,1])
 model = RandomForestClassifier(n_estimators=200, random_state=42)
 model.fit(X_train,y_train)
 
-# ----------------------
-# Fonctions bot
-# ----------------------
+# ============================
+# Fonction de calcul xG
+# ============================
 def xg_from_odds(odds):
     return round(2.5/odds,2)
 
@@ -48,15 +49,22 @@ def double_chance(prob):
 def value_bet(prob,odds):
     return (prob*odds)-1
 
-# ----------------------
-# WhatsApp endpoint
-# ----------------------
-@app.route("/whatsapp", methods=["POST"])
-def whatsapp_bot():
-    msg = request.form.get("Body").strip().split("\n")
+# ============================
+# Fonction pour Telegram
+# ============================
+TELEGRAM_TOKEN = 8237989275:AAHwDZ_xSzFNOHQwBub7hGowlCxTm4d2HMc
+
+updater = Updater(token=TELEGRAM_TOKEN, use_context=True)
+dispatcher = updater.dispatcher
+
+def start(update, context):
+    update.message.reply_text("Salut, je suis ton bot de pronostics football ! Envoie-moi un match pour obtenir un pronostic.")
+
+def handle_message(update, context):
+    message = update.message.text.strip().split("\n")
     try:
-        teams = msg[0].split()
-        odds = list(map(float,msg[1].split()))
+        teams = message[0].split()
+        odds = list(map(float,message[1].split()))
         home,away = teams[0],teams[1]
         oh,od,oa = odds
 
@@ -65,7 +73,7 @@ def whatsapp_bot():
         prob_home=model.predict_proba([[xg_home,xg_away]])[0][1]
         fav = home if prob_home>0.5 else away
 
-        reply=f"""
+        response = f"""
 ⚽ {home} vs {away}
 🏆 Favori : {fav}
 🔐 Double chance : {double_chance(prob_home)}
@@ -75,25 +83,22 @@ def whatsapp_bot():
 💎 Value Bet : {'YES' if value_bet(prob_home,oh)>0 else 'NO'}
 ⚠️ Jeu responsable
 """
+        update.message.reply_text(response)
     except:
-        reply="❌ Format invalide. Exemple:\nArsenal Chelsea\n1.85 3.60 4.20"
+        update.message.reply_text("❌ Format invalide. Exemple :\nArsenal Chelsea\n1.85 3.60 4.20")
 
-    resp = MessagingResponse()
-    resp.message(reply)
-    return str(resp)
+# ============================
+# Ajout des handlers Telegram
+# ============================
+start_handler = CommandHandler('start', start)
+dispatcher.add_handler(start_handler)
 
-# ----------------------
-# Dashboard Flask
-# ----------------------
-@app.route("/")
-def dashboard():
-    df=pd.read_csv("data/sample_matches.csv")
-    # Ajouter backtesting simple
-    df['xG_home'] = df['odds_home'].apply(xg_from_odds)
-    df['xG_away'] = df['odds_away'].apply(xg_from_odds)
-    df['prob_home'] = df.apply(lambda r: model.predict_proba([[r.xG_home,r.xG_away]])[0][1],axis=1)
-    df['Fav'] = df.apply(lambda r: r.home if r.prob_home>0.5 else r.away,axis=1)
-    return render_template("dashboard.html", tables=[df.to_html(classes='data', index=False)])
+message_handler = MessageHandler(Filters.text, handle_message)
+dispatcher.add_handler(message_handler)
 
-if __name__=="__main__":
+# ============================
+# Démarrage du bot
+# ============================
+if __name__ == "__main__":
+    updater.start_polling()
     app.run(host="0.0.0.0", port=5000)
