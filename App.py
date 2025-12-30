@@ -93,10 +93,7 @@ def handle_message(update, context):
 start_handler = CommandHandler('start', start)
 dispatcher.add_handler(start_handler)
 
-message_handler = MessageHandler(Filters.text, handle_message)
-dispatcher.add_handler(message_handler)
-
-# ============================
+message_handler = MessageHandler(Filte
 # Démarrage du bot
 # ============================
 if __name__ == "__main__":
